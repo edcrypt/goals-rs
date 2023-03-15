@@ -12,8 +12,9 @@ struct Goal {
 
 impl Goal {
     fn save(&self) -> Result<()> {
-        // TODO move to main()
+        // TODO move connection to main()
         let conn = Connection::open_in_memory()?;
+
         conn.execute(
             "CREATE TABLE goals (
             	id   INTEGER PRIMARY KEY,
@@ -29,26 +30,29 @@ impl Goal {
         )?;
         Ok(())
     }
+
+    fn input() -> Self {
+        let mut goal_text = String::new();
+        let today = Local::now();
+        let week_number = today.iso_week().week0();
+        let year = today.year();
+
+        println!("{}", "Weekly goal:".bold());
+        io::stdin()
+            .read_line(&mut goal_text)
+            .expect("Error reading console");
+        Goal {
+            text: goal_text,
+            week: week_number,
+            year: year,
+        }
+    }
 }
 
 fn main() -> Result<()> {
-    let mut goal_text = String::new();
-    let today = Local::now();
-    let week_number = today.iso_week().week0();
-    let year = today.year();
+    let goal = Goal::input();
 
-    println!("{}", "Weekly goal:".bold());
-    io::stdin()
-        .read_line(&mut goal_text) // TODO read directly into Goal.goal_text?
-        .expect("Error reading console");
-
-    let goal = Goal {
-        text: goal_text.clone(),
-        week: week_number,
-        year: year,
-    };
-
-    println!("Você digitou: {goal_text}");
+    println!("Weekly goal: {:?}", goal);
 
     goal.save()
 }
