@@ -1,8 +1,23 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 use chrono::{Datelike, Local};
+use clap::Parser;
 use colored::Colorize;
 use rusqlite::{params, Connection, Result};
 use std::{fmt, io};
+
+#[derive(Parser)] // requires `derive` feature
+#[command(name = "goals")]
+#[command(bin_name = "goals")]
+enum GoalsCli {
+    Weekly(WeeklyGoalArgs),
+}
+
+#[derive(clap::Args, Debug)]
+#[command(author, version, about, long_about = "List/Set your weekly goal(s)")]
+struct WeeklyGoalArgs {
+    #[arg(long)]
+    text: Option<String>,
+}
 
 #[derive(Debug, Default)]
 struct Goal {
@@ -67,8 +82,10 @@ impl From<&str> for Goal {
 }
 
 fn main() -> Result<()> {
+    let GoalsCli::Weekly(args) = GoalsCli::parse();
     let goal = Goal::input();
 
+    print!("{:?}", args);
     println!("Weekly goal: {:?}", goal);
 
     goal.save()

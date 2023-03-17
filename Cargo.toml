@@ -10,3 +10,7 @@ rusqlite = { version = "0.28.0", features = ["bundled"] }
 colored = "2.0.0"
 chrono = "0.4.23"
 rusty-hook = "0.11.2"
+clap = { version = "4.1.8", features = ["derive"] }
+
+[registries.creates-io]
+protocol = "sparse" # New on rust 1.68.0
