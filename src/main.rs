@@ -11,8 +11,11 @@ enum GoalsCommands {
 }
 
 #[derive(Parser)]
-#[command(name = "goals")]
+#[command(name = "Goals")]
 #[command(bin_name = "goals")]
+#[command(author = "Eduardo Padoan <eduardo.padoan@gmail.com>")]
+#[command(version = "0.1b")]
+#[command(about = "Set productivity goals and daily tasks to achieve them", long_about = None)]
 struct GoalsCli {
     #[command(subcommand)]
     command: Option<GoalsCommands>,
