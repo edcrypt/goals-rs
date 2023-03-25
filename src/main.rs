@@ -3,6 +3,13 @@ use clap::{Parser, Subcommand};
 use goals::Goal;
 use rusqlite::Result;
 
+const NAME: &str = "Goals";
+const BIN: &str = "goals";
+const AUTHOR: &str = "Eduardo Padoan";
+const EMAIL: &str = "eduardo.padoan@gmail.com";
+const VERSION: &str = "0.0.1b";
+const ABOUT: &str = "Set productivity goals and daily tasks to achieve them";
+
 #[derive(Subcommand)]
 enum GoalsCommands {
     Weekly,
@@ -11,11 +18,11 @@ enum GoalsCommands {
 }
 
 #[derive(Parser)]
-#[command(name = "Goals")]
-#[command(bin_name = "goals")]
-#[command(author = "Eduardo Padoan <eduardo.padoan@gmail.com>")]
-#[command(version = "0.1b")]
-#[command(about = "Set productivity goals and daily tasks to achieve them", long_about = None)]
+#[command(name = NAME)]
+#[command(bin_name = BIN)]
+#[command(author = "{AUTHOR} <{EMAIL}>")]
+#[command(version = VERSION)]
+#[command(about = ABOUT, long_about = None)]
 struct GoalsCli {
     #[command(subcommand)]
     command: Option<GoalsCommands>,
@@ -24,16 +31,11 @@ struct GoalsCli {
 fn main() -> Result<()> {
     let cli = GoalsCli::parse();
 
-    let goal: Option<Goal> = match &cli.command {
-        Some(GoalsCommands::Weekly) => Some(Goal::input()),
-        Some(GoalsCommands::Daily) => Some(Goal::input()), // TODO...
-        Some(GoalsCommands::ListTasks) => Some(Goal::input()), // TODO...
-        None => None,
+    let goal = match &cli.command {
+        Some(GoalsCommands::Weekly) => Goal::input(None),
+        Some(GoalsCommands::Daily) => Goal::input(None), // TODO...
+        Some(GoalsCommands::ListTasks) => Goal::input(None), // TODO...
+        None => Goal::wizard(),
     };
-
-    if let Some(goal) = goal {
-        goal.save()
-    } else {
-        Ok(())
-    }
+    goal.save()
 }

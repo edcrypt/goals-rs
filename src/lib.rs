@@ -2,7 +2,27 @@
 use chrono::{Datelike, Local};
 use colored::Colorize;
 use rusqlite::{params, Connection, Result};
-use std::{fmt, io};
+use std::{fmt, io, thread::current};
+
+const DB_FILE: &str = "goals.db";
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurrentWeekYear(u32, i32);
+
+impl CurrentWeekYear {
+    fn new() -> Self {
+        let today = Local::now();
+        let week = today.iso_week().week0();
+        let year = today.year();
+        Self(week, year)
+    }
+}
+
+impl Default for CurrentWeekYear {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Goal {
@@ -13,17 +33,16 @@ pub struct Goal {
 
 impl Goal {
     /// Creates a new [`Goal`] for this week.
-    pub fn new(text: String) -> Self {
-        let today = Local::now();
-        let week = today.iso_week().week0();
-        let year = today.year();
+    pub fn new(text: String, current_week_year: &CurrentWeekYear) -> Self {
+        let week = current_week_year.0;
+        let year = current_week_year.1;
 
         Self { text, week, year }
     }
 
     pub fn save(&self) -> Result<()> {
         // TODO move connection to main()
-        let conn = Connection::open("goals.db")?;
+        let conn = Connection::open(DB_FILE)?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS goals (
@@ -41,7 +60,7 @@ impl Goal {
         Ok(())
     }
 
-    pub fn input() -> Self {
+    pub fn input(current_week_year: Option<&CurrentWeekYear>) -> Self {
         let mut goal_text = String::new();
 
         println!("{}", "Weekly goal:".bold());
@@ -50,7 +69,49 @@ impl Goal {
             .expect("Error reading console");
 
         goal_text = goal_text.trim().to_string();
-        Self::new(goal_text)
+
+        Self::new(
+            goal_text,
+            current_week_year.unwrap_or(&CurrentWeekYear::default()),
+        )
+    }
+
+    fn get_current_or_input(current_week_year: &CurrentWeekYear) -> Result<Self> {
+        let conn = Connection::open(DB_FILE)?;
+        let mut stmt = conn.prepare("SELECT text FROM goals WHERE year = ?1 AND week = ?2")?;
+        let mut rows = stmt.query(params![&current_week_year.0, &current_week_year.1])?;
+        let row = rows.next()?;
+        if let Some(row) = row {
+            Ok(Self::new(
+                row.get(0).unwrap_or(String::from("")),
+                current_week_year,
+            ))
+        } else {
+            Ok(Self::input(Some(current_week_year)))
+        }
+    }
+
+    pub fn wizard() -> Self {
+        let current_week_year = CurrentWeekYear::new();
+
+        // is there a weekly goal?
+        // N: input one
+        let current = Self::get_current_or_input(&current_week_year).expect("Error fetching goal");
+
+        // is there a daily goal for today?
+        // N: input one
+
+        // are there unfinished (ToDo) tasks?
+        // Y: ask which ones should be:
+        //    Moved to today's list
+        //    Discarded
+        //    Kept as ToDo (snoozed)
+
+        // list existing ToDos
+        // ask for new ones, until user is done
+
+        // return aggregator:
+        return current;
     }
 }
 
@@ -62,8 +123,20 @@ impl fmt::Display for Goal {
 
 impl From<&str> for Goal {
     fn from(text: &str) -> Self {
-        Self::new(text.to_string())
+        Self::new(text.to_string(), &CurrentWeekYear::new())
     }
+}
+
+struct Task {
+    text: String,
+    status: TaskStatus,
+}
+
+enum TaskStatus {
+    ToDo,
+    Done,
+    InProgress,
+    Discarded,
 }
 
 #[cfg(test)]
