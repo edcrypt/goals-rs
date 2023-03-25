@@ -31,7 +31,7 @@ struct GoalsCli {
 fn main() -> Result<()> {
     let cli = GoalsCli::parse();
 
-    let goal = match &cli.command {
+    let mut goal = match &cli.command {
         Some(GoalsCommands::Weekly) => Goal::input(None),
         Some(GoalsCommands::Daily) => Goal::input(None), // TODO...
         Some(GoalsCommands::ListTasks) => Goal::input(None), // TODO...

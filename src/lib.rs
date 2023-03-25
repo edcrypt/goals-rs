@@ -29,6 +29,7 @@ pub struct Goal {
     pub text: String,
     pub week: u32,
     pub year: i32,
+    persisted: bool,
 }
 
 impl Goal {
@@ -37,26 +38,45 @@ impl Goal {
         let week = current_week_year.0;
         let year = current_week_year.1;
 
-        Self { text, week, year }
+        Self {
+            text,
+            week,
+            year,
+            persisted: false,
+        }
     }
 
-    pub fn save(&self) -> Result<()> {
+    fn from_db(text: String, week: u32, year: i32) -> Self {
+        Self {
+            text,
+            week,
+            year,
+            persisted: true,
+        }
+    }
+
+    pub fn save(&mut self) -> Result<()> {
+        // guard against resaving
+        if self.persisted {
+            return Ok(());
+        }
         // TODO move connection to main()
         let conn = Connection::open(DB_FILE)?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS goals (
-            	id   INTEGER PRIMARY KEY,
             	text TEXT NOT NULL,
             	week INTEGER NOT NULL,
-            	year INTEGER NOT NULL
+            	year INTEGER NOT NULL,
+                PRIMARY KEY (week, year)
 			)",
             (),
         )?;
         conn.execute(
-            "INSERT INTO goals (text, week, year) VALUES (?1, ?2, ?3)",
+            "INSERT OR REPLACE INTO goals (text, week, year) VALUES (?1, ?2, ?3)",
             (&self.text, &self.week, &self.year),
         )?;
+        self.persisted = true;
         Ok(())
     }
 
@@ -78,17 +98,22 @@ impl Goal {
 
     fn get_current_or_input(current_week_year: &CurrentWeekYear) -> Result<Self> {
         let conn = Connection::open(DB_FILE)?;
-        let mut stmt = conn.prepare("SELECT text FROM goals WHERE year = ?1 AND week = ?2")?;
+        let mut stmt = conn.prepare("SELECT text FROM goals WHERE week = ?1 AND year = ?2")?;
         let mut rows = stmt.query(params![&current_week_year.0, &current_week_year.1])?;
         let row = rows.next()?;
         if let Some(row) = row {
-            Ok(Self::new(
+            Ok(Self::from_db(
                 row.get(0).unwrap_or(String::from("")),
-                current_week_year,
+                current_week_year.0,
+                current_week_year.1,
             ))
         } else {
             Ok(Self::input(Some(current_week_year)))
         }
+    }
+
+    pub fn present(&self) {
+        println!("Your goal this week: {}", self.text)
     }
 
     pub fn wizard() -> Self {
@@ -97,6 +122,7 @@ impl Goal {
         // is there a weekly goal?
         // N: input one
         let current = Self::get_current_or_input(&current_week_year).expect("Error fetching goal");
+        current.present();
 
         // is there a daily goal for today?
         // N: input one
