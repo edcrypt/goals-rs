@@ -7,18 +7,23 @@ use std::{fmt, io, thread::current};
 const DB_FILE: &str = "goals.db";
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurrentWeekYear(u32, i32);
+pub struct DayWeekYear {
+    day: u32,
+    week: u32,
+    year: i32,
+}
 
-impl CurrentWeekYear {
+impl DayWeekYear {
     fn new() -> Self {
-        let today = Local::now();
-        let week = today.iso_week().week0();
-        let year = today.year();
-        Self(week, year)
+        let date = Local::now();
+        let day = date.ordinal();
+        let week = date.iso_week().week();
+        let year = date.year();
+        Self { day, week, year }
     }
 }
 
-impl Default for CurrentWeekYear {
+impl Default for DayWeekYear {
     fn default() -> Self {
         Self::new()
     }
@@ -28,15 +33,15 @@ impl Default for CurrentWeekYear {
 pub struct Goal {
     pub text: String,
     pub week: u32,
-    pub year: i32,
+    pub year: i32, // in case we travel back in time?
     persisted: bool,
 }
 
 impl Goal {
     /// Creates a new [`Goal`] for this week.
-    pub fn new(text: String, current_week_year: &CurrentWeekYear) -> Self {
-        let week = current_week_year.0;
-        let year = current_week_year.1;
+    pub fn new(text: String, current_week_year: &DayWeekYear) -> Self {
+        let week = current_week_year.week;
+        let year = current_week_year.year;
 
         Self {
             text,
@@ -68,6 +73,7 @@ impl Goal {
             	text TEXT NOT NULL,
             	week INTEGER NOT NULL,
             	year INTEGER NOT NULL,
+                day INTEGER,
                 PRIMARY KEY (week, year)
 			)",
             (),
@@ -80,7 +86,7 @@ impl Goal {
         Ok(())
     }
 
-    pub fn input(current_week_year: Option<&CurrentWeekYear>) -> Self {
+    pub fn input(current_week_year: Option<&DayWeekYear>) -> Self {
         let mut goal_text = String::new();
 
         println!("{}", "Weekly goal:".bold());
@@ -92,41 +98,44 @@ impl Goal {
 
         Self::new(
             goal_text,
-            current_week_year.unwrap_or(&CurrentWeekYear::default()),
+            current_week_year.unwrap_or(&DayWeekYear::default()),
         )
     }
 
-    fn get_current_or_input(current_week_year: &CurrentWeekYear) -> Result<Self> {
+    fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
         let conn = Connection::open(DB_FILE)?;
+        // TODO: create table if needed
         let mut stmt = conn.prepare("SELECT text FROM goals WHERE week = ?1 AND year = ?2")?;
-        let mut rows = stmt.query(params![&current_week_year.0, &current_week_year.1])?;
+        let mut rows = stmt.query(params![&today.week, &today.year])?;
         let row = rows.next()?;
         if let Some(row) = row {
             Ok(Self::from_db(
                 row.get(0).unwrap_or(String::from("")),
-                current_week_year.0,
-                current_week_year.1,
+                today.week,
+                today.year,
             ))
         } else {
-            Ok(Self::input(Some(current_week_year)))
+            Ok(Self::input(Some(today)))
         }
     }
 
     pub fn present(&self) {
-        println!("Your goal this week: {}", self.text)
+        println!("Your goal this week (#{}) is {}", self.week, self.text)
     }
 
     pub fn wizard() -> Self {
-        let current_week_year = CurrentWeekYear::new();
+        let today = DayWeekYear::new();
 
         // is there a weekly goal?
         // N: input one
-        let current = Self::get_current_or_input(&current_week_year).expect("Error fetching goal");
-        current.present();
+        let goal = Self::get_current_or_input(&today).expect("Error fetching goal");
+        goal.present();
 
         // is there a daily goal for today?
         // N: input one
-
+        let objective =
+            DailyObjective::get_current_or_input(&today).expect("Error fetching objective");
+        objective.present();
         // are there unfinished (ToDo) tasks?
         // Y: ask which ones should be:
         //    Moved to today's list
@@ -137,7 +146,7 @@ impl Goal {
         // ask for new ones, until user is done
 
         // return aggregator:
-        return current;
+        return goal;
     }
 }
 
@@ -149,7 +158,72 @@ impl fmt::Display for Goal {
 
 impl From<&str> for Goal {
     fn from(text: &str) -> Self {
-        Self::new(text.to_string(), &CurrentWeekYear::new())
+        Self::new(text.to_string(), &DayWeekYear::new())
+    }
+}
+
+/// The objective for today, in order to achieve a weekly goal
+#[derive(Debug, Clone, PartialEq)]
+struct DailyObjective {
+    pub text: String,
+    pub day: u32,
+    pub year: i32,
+    persisted: bool,
+}
+
+// TODO: use traits to reduce duplication with `Goal`
+impl DailyObjective {
+    fn new(text: String, current_day_year: &DayWeekYear) -> Self {
+        let day = current_day_year.day;
+        let year = current_day_year.year;
+        Self {
+            text,
+            day,
+            year,
+            persisted: false,
+        }
+    }
+
+    fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
+        let conn = Connection::open(DB_FILE)?;
+        let mut stmt = conn.prepare("SELECT text FROM goals WHERE day =?1 AND year =?2")?;
+        let mut rows = stmt.query(params![&today.day, &today.year])?;
+        let row = rows.next()?;
+        if let Some(row) = row {
+            Ok(Self::from_db(
+                row.get(0).unwrap_or(String::from("")),
+                today.day,
+                today.year,
+            ))
+        } else {
+            Ok(Self::input(Some(today)))
+        }
+    }
+
+    fn from_db(text: String, day: u32, year: i32) -> Self {
+        Self {
+            text,
+            day,
+            year,
+            persisted: true,
+        }
+    }
+
+    fn input(date: Option<&DayWeekYear>) -> Self {
+        let mut text = String::new();
+
+        println!("{}", "Today's objective:".bold());
+        io::stdin()
+            .read_line(&mut text)
+            .expect("Error reading console");
+
+        text = text.trim().to_string();
+
+        Self::new(text, date.unwrap_or(&DayWeekYear::default()))
+    }
+
+    fn present(&self) {
+        println!("Your objetive today (#{}) is {}", self.day, self.text)
     }
 }
 
