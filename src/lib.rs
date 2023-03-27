@@ -63,11 +63,12 @@ impl Goal {
     pub fn create_table(conn: &Connection) -> Result<()> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS goals (
+                id INTEGER PRIMARY KEY,
             	text TEXT NOT NULL,
             	week INTEGER DEFAULT NULL,
             	year INTEGER NOT NULL,
-                day INTEGER,
-                PRIMARY KEY (week, year)
+                day INTEGER DEFAULT NULL,
+                UNIQUE (week, year, day)
 			)",
             (),
         )?;
