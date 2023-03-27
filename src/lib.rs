@@ -60,6 +60,20 @@ impl Goal {
         }
     }
 
+    pub fn create_table(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS goals (
+            	text TEXT NOT NULL,
+            	week INTEGER DEFAULT NULL,
+            	year INTEGER NOT NULL,
+                day INTEGER,
+                PRIMARY KEY (week, year)
+			)",
+            (),
+        )?;
+        Ok(())
+    }
+
     pub fn save(&mut self) -> Result<()> {
         // guard against resaving
         if self.persisted {
@@ -68,16 +82,8 @@ impl Goal {
         // TODO move connection to main()
         let conn = Connection::open(DB_FILE)?;
 
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS goals (
-            	text TEXT NOT NULL,
-            	week INTEGER NOT NULL,
-            	year INTEGER NOT NULL,
-                day INTEGER,
-                PRIMARY KEY (week, year)
-			)",
-            (),
-        )?;
+        Self::create_table(&conn)?;
+
         conn.execute(
             "INSERT OR REPLACE INTO goals (text, week, year) VALUES (?1, ?2, ?3)",
             (&self.text, &self.week, &self.year),
@@ -104,7 +110,9 @@ impl Goal {
 
     fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
         let conn = Connection::open(DB_FILE)?;
-        // TODO: create table if needed
+
+        Self::create_table(&conn)?;
+
         let mut stmt = conn.prepare("SELECT text FROM goals WHERE week = ?1 AND year = ?2")?;
         let mut rows = stmt.query(params![&today.week, &today.year])?;
         let row = rows.next()?;
@@ -124,17 +132,20 @@ impl Goal {
     }
 
     pub fn wizard() -> Self {
+        // TODO: create db connection here?
         let today = DayWeekYear::new();
 
         // is there a weekly goal?
         // N: input one
-        let goal = Self::get_current_or_input(&today).expect("Error fetching goal");
+        let mut goal = Self::get_current_or_input(&today).expect("Error fetching goal");
+        goal.save().expect("Error saving goal");
         goal.present();
 
         // is there a daily goal for today?
         // N: input one
-        let objective =
+        let mut objective =
             DailyObjective::get_current_or_input(&today).expect("Error fetching objective");
+        objective.save().expect("Error saving objective");
         objective.present();
         // are there unfinished (ToDo) tasks?
         // Y: ask which ones should be:
@@ -175,6 +186,10 @@ struct DailyObjective {
 }
 
 // TODO: use traits to reduce duplication with `Goal`
+// <T> Target
+//  |__WeeklyGoal
+//  |__DailyObjective
+//  |__Task
 impl DailyObjective {
     fn new(text: String, current_day_year: &DayWeekYear) -> Self {
         let day = current_day_year.day;
@@ -212,6 +227,17 @@ impl DailyObjective {
         }
     }
 
+    fn save(&mut self) -> Result<()> {
+        if self.persisted {
+            return Ok(());
+        }
+        let conn = Connection::open(DB_FILE)?;
+        let mut stmt = conn.prepare("INSERT INTO goals (day, year, text) VALUES (?1, ?2, ?3)")?;
+        stmt.execute(params![&self.day, &self.year, &self.text])?;
+        self.persisted = true;
+        Ok(())
+    }
+
     fn input(date: Option<&DayWeekYear>) -> Self {
         let mut text = String::new();
 
@@ -239,8 +265,10 @@ struct Task {
 enum TaskStatus {
     ToDo,
     Done,
-    InProgress,
+    Snoozed,
     Discarded,
+    // TODO: track progress
+    // InProgress,
 }
 
 impl Task {
@@ -252,8 +280,55 @@ impl Task {
         }
     }
 
-    fn present_unfinished() -> Option<Vec<Self>> {
+    fn save(&mut self) {
         todo!()
+    }
+
+    fn create_table(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY,
+                text VARCHAR(255),
+                status TEXT NOT NULL DEFAULT 'T'
+            )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn get_todos() -> Result<Option<Vec<Self>>> {
+        let conn = Connection::open(DB_FILE)?;
+
+        Self::create_table(&conn)?;
+
+        let mut stmt = conn.prepare("SELECT text FROM tasks WHERE status =?1")?;
+
+        let tasks_iter = stmt.query_map(["T"], |row| {
+            Ok(Self::from_db(
+                row.get(0).unwrap_or(String::from("")),
+                TaskStatus::ToDo,
+            ))
+        })?;
+        let tasks = tasks_iter.collect::<Result<Vec<_>>>()?;
+        if tasks.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(tasks))
+        }
+    }
+
+    fn present_unfinished() -> Option<Vec<Task>> {
+        let todos = Self::get_todos().expect("Error getting tasks");
+        match todos {
+            Some(ts) => {
+                println!("You have the following unfinished tasks:");
+                for task in &ts {
+                    println!(" - {}", task.text);
+                }
+                Some(ts)
+            }
+            None => None,
+        }
     }
 
     fn reprioritize(unfinished_tasks: &Option<Vec<Self>>) -> Vec<Self> {
@@ -269,8 +344,12 @@ impl Task {
         todo!()
     }
 
-    fn from_db() -> Self {
-        todo!()
+    fn from_db(text: String, status: TaskStatus) -> Self {
+        Self {
+            text,
+            status,
+            persisted: false,
+        }
     }
 }
 
