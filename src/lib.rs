@@ -141,6 +141,9 @@ impl Goal {
         //    Moved to today's list
         //    Discarded
         //    Kept as ToDo (snoozed)
+        let unfinished_tasks = Task::present_unfinished();
+        let mut todo_tasks = Task::reprioritize(&unfinished_tasks);
+        Task::input_new_tasks(&today, &mut todo_tasks);
 
         // list existing ToDos
         // ask for new ones, until user is done
@@ -230,6 +233,7 @@ impl DailyObjective {
 struct Task {
     text: String,
     status: TaskStatus,
+    persisted: bool,
 }
 
 enum TaskStatus {
@@ -237,6 +241,37 @@ enum TaskStatus {
     Done,
     InProgress,
     Discarded,
+}
+
+impl Task {
+    fn new(text: String, status: TaskStatus) -> Self {
+        Self {
+            text,
+            status,
+            persisted: false,
+        }
+    }
+
+    fn present_unfinished() -> Option<Vec<Self>> {
+        todo!()
+    }
+
+    fn reprioritize(unfinished_tasks: &Option<Vec<Self>>) -> Vec<Self> {
+        todo!()
+    }
+
+    fn input_new_tasks(today: &DayWeekYear, todo_tasks: &mut Vec<Self>) {
+        todo_tasks.push(Self::input(today));
+        todo!()
+    }
+
+    fn input(today: &DayWeekYear) -> Self {
+        todo!()
+    }
+
+    fn from_db() -> Self {
+        todo!()
+    }
 }
 
 #[cfg(test)]
