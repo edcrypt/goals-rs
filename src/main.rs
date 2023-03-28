@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 use clap::{Parser, Subcommand};
-use goals::Goal;
+use goals::WeeklyGoal;
+use human_panic::setup_panic;
 use rusqlite::Result;
 
 const NAME: &str = "Goals";
@@ -28,14 +29,15 @@ struct GoalsCli {
     command: Option<GoalsCommands>,
 }
 
-fn main() -> Result<()> {
+fn main() {
+    setup_panic!();
+
     let cli = GoalsCli::parse();
 
-    let mut goal = match &cli.command {
-        Some(GoalsCommands::Weekly) => Goal::input(None),
-        Some(GoalsCommands::Daily) => Goal::input(None), // TODO...
-        Some(GoalsCommands::ListTasks) => Goal::input(None), // TODO...
-        None => Goal::wizard(),
+    match &cli.command {
+        Some(GoalsCommands::Weekly) => WeeklyGoal::input(None),
+        Some(GoalsCommands::Daily) => WeeklyGoal::input(None), // TODO...
+        Some(GoalsCommands::ListTasks) => WeeklyGoal::input(None), // TODO...
+        None => WeeklyGoal::wizard(),
     };
-    goal.save()
 }

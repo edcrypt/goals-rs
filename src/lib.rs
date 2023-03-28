@@ -30,14 +30,14 @@ impl Default for DayWeekYear {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct Goal {
+pub struct WeeklyGoal {
     pub text: String,
     pub week: u32,
     pub year: i32, // in case we travel back in time?
     persisted: bool,
 }
 
-impl Goal {
+impl WeeklyGoal {
     /// Creates a new [`Goal`] for this week.
     pub fn new(text: String, current_week_year: &DayWeekYear) -> Self {
         let week = current_week_year.week;
@@ -62,13 +62,12 @@ impl Goal {
 
     pub fn create_table(conn: &Connection) -> Result<()> {
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS goals (
+            "CREATE TABLE IF NOT EXISTS weekly_goals (
                 id INTEGER PRIMARY KEY,
             	text TEXT NOT NULL,
             	week INTEGER DEFAULT NULL,
             	year INTEGER NOT NULL,
-                day INTEGER DEFAULT NULL,
-                UNIQUE (week, year, day)
+                UNIQUE (week, year)
 			)",
             (),
         )?;
@@ -86,7 +85,7 @@ impl Goal {
         Self::create_table(&conn)?;
 
         conn.execute(
-            "INSERT OR REPLACE INTO goals (text, week, year) VALUES (?1, ?2, ?3)",
+            "INSERT OR REPLACE INTO weekly_goals (text, week, year) VALUES (?1, ?2, ?3)",
             (&self.text, &self.week, &self.year),
         )?;
         self.persisted = true;
@@ -114,7 +113,8 @@ impl Goal {
 
         Self::create_table(&conn)?;
 
-        let mut stmt = conn.prepare("SELECT text FROM goals WHERE week = ?1 AND year = ?2")?;
+        let mut stmt =
+            conn.prepare("SELECT text FROM weekly_goals WHERE week = ?1 AND year = ?2")?;
         let mut rows = stmt.query(params![&today.week, &today.year])?;
         let row = rows.next()?;
         if let Some(row) = row {
@@ -165,13 +165,13 @@ impl Goal {
     }
 }
 
-impl fmt::Display for Goal {
+impl fmt::Display for WeeklyGoal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.text)
     }
 }
 
-impl From<&str> for Goal {
+impl From<&str> for WeeklyGoal {
     fn from(text: &str) -> Self {
         Self::new(text.to_string(), &DayWeekYear::new())
     }
@@ -205,7 +205,11 @@ impl DailyObjective {
 
     fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
         let conn = Connection::open(DB_FILE)?;
-        let mut stmt = conn.prepare("SELECT text FROM goals WHERE day =?1 AND year =?2")?;
+
+        Self::create_table(&conn)?;
+
+        let mut stmt =
+            conn.prepare("SELECT text FROM daily_objectives WHERE day =?1 AND year =?2")?;
         let mut rows = stmt.query(params![&today.day, &today.year])?;
         let row = rows.next()?;
         if let Some(row) = row {
@@ -228,12 +232,27 @@ impl DailyObjective {
         }
     }
 
+    pub fn create_table(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS daily_objectives (
+                id INTEGER PRIMARY KEY,
+            	text TEXT NOT NULL,
+            	year INTEGER NOT NULL,
+                day INTEGER DEFAULT NULL,
+                UNIQUE (year, day)
+			)",
+            (),
+        )?;
+        Ok(())
+    }
+
     fn save(&mut self) -> Result<()> {
         if self.persisted {
             return Ok(());
         }
         let conn = Connection::open(DB_FILE)?;
-        let mut stmt = conn.prepare("INSERT INTO goals (day, year, text) VALUES (?1, ?2, ?3)")?;
+        let mut stmt =
+            conn.prepare("INSERT INTO daily_objectives (day, year, text) VALUES (?1, ?2, ?3)")?;
         stmt.execute(params![&self.day, &self.year, &self.text])?;
         self.persisted = true;
         Ok(())
@@ -370,15 +389,15 @@ mod tests {
 
     #[test]
     fn test_default_goal() {
-        let goal1 = Goal::default();
-        let goal2 = Goal::default();
+        let goal1 = WeeklyGoal::default();
+        let goal2 = WeeklyGoal::default();
         assert_eq!(goal1.text, "");
         assert_eq!(goal1, goal2);
     }
 
     #[test]
     fn test_goal_from_str() {
-        let goal = Goal::from("Hello");
+        let goal = WeeklyGoal::from("Hello");
         assert_eq!(goal.text, "Hello")
     }
 }
