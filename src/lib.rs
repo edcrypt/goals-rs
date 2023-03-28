@@ -6,6 +6,35 @@ use std::{fmt, io, thread::current};
 
 const DB_FILE: &str = "goals.db";
 
+pub fn wizard() {
+    println!("{}", "Goals Wizard".bold());
+    let today = DayWeekYear::new();
+
+    // is there a weekly goal?
+    // N: input one
+    let mut goal = WeeklyGoal::get_current_or_input(&today).expect("Error fetching goal");
+    goal.save().expect("Error saving goal");
+    goal.present();
+
+    // is there a daily goal for today?
+    // N: input one
+    let mut objective =
+        DailyObjective::get_current_or_input(&today).expect("Error fetching objective");
+    objective.save().expect("Error saving objective");
+    objective.present();
+    // are there unfinished (ToDo) tasks?
+    // Y: ask which ones should be:
+    //    Moved to today's list
+    //    Discarded
+    //    Kept as ToDo (snoozed)
+    let unfinished_tasks = Task::present_unfinished();
+    let mut todo_tasks = Task::reprioritize(&unfinished_tasks);
+    Task::input_new_tasks(&today, &mut todo_tasks);
+
+    // list existing ToDos
+    // ask for new ones, until user is done
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DayWeekYear {
     day: u32,
@@ -39,9 +68,9 @@ pub struct WeeklyGoal {
 
 impl WeeklyGoal {
     /// Creates a new [`Goal`] for this week.
-    pub fn new(text: String, current_week_year: &DayWeekYear) -> Self {
-        let week = current_week_year.week;
-        let year = current_week_year.year;
+    pub fn new(text: String, date: &DayWeekYear) -> Self {
+        let week = date.week;
+        let year = date.year;
 
         Self {
             text,
@@ -60,7 +89,7 @@ impl WeeklyGoal {
         }
     }
 
-    pub fn create_table(conn: &Connection) -> Result<()> {
+    fn create_table(conn: &Connection) -> Result<()> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS weekly_goals (
                 id INTEGER PRIMARY KEY,
@@ -74,7 +103,7 @@ impl WeeklyGoal {
         Ok(())
     }
 
-    pub fn save(&mut self) -> Result<()> {
+    fn save(&mut self) -> Result<()> {
         // guard against resaving
         if self.persisted {
             return Ok(());
@@ -92,7 +121,7 @@ impl WeeklyGoal {
         Ok(())
     }
 
-    pub fn input(current_week_year: Option<&DayWeekYear>) -> Self {
+    fn input(date: Option<&DayWeekYear>) -> Self {
         let mut goal_text = String::new();
 
         println!("{}", "Weekly goal:".bold());
@@ -102,10 +131,13 @@ impl WeeklyGoal {
 
         goal_text = goal_text.trim().to_string();
 
-        Self::new(
-            goal_text,
-            current_week_year.unwrap_or(&DayWeekYear::default()),
-        )
+        Self::new(goal_text, date.unwrap_or(&DayWeekYear::default()))
+    }
+
+    pub fn input_and_save() {
+        let mut goal = Self::input(None);
+        goal.present();
+        goal.save().expect("Error saving goal");
     }
 
     fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
@@ -128,40 +160,8 @@ impl WeeklyGoal {
         }
     }
 
-    pub fn present(&self) {
+    fn present(&self) {
         println!("Your goal this week (#{}) is {}", self.week, self.text)
-    }
-
-    pub fn wizard() -> Self {
-        // TODO: create db connection here?
-        let today = DayWeekYear::new();
-
-        // is there a weekly goal?
-        // N: input one
-        let mut goal = Self::get_current_or_input(&today).expect("Error fetching goal");
-        goal.save().expect("Error saving goal");
-        goal.present();
-
-        // is there a daily goal for today?
-        // N: input one
-        let mut objective =
-            DailyObjective::get_current_or_input(&today).expect("Error fetching objective");
-        objective.save().expect("Error saving objective");
-        objective.present();
-        // are there unfinished (ToDo) tasks?
-        // Y: ask which ones should be:
-        //    Moved to today's list
-        //    Discarded
-        //    Kept as ToDo (snoozed)
-        let unfinished_tasks = Task::present_unfinished();
-        let mut todo_tasks = Task::reprioritize(&unfinished_tasks);
-        Task::input_new_tasks(&today, &mut todo_tasks);
-
-        // list existing ToDos
-        // ask for new ones, until user is done
-
-        // return aggregator:
-        return goal;
     }
 }
 
@@ -179,7 +179,7 @@ impl From<&str> for WeeklyGoal {
 
 /// The objective for today, in order to achieve a weekly goal
 #[derive(Debug, Clone, PartialEq)]
-struct DailyObjective {
+pub struct DailyObjective {
     pub text: String,
     pub day: u32,
     pub year: i32,
@@ -251,8 +251,9 @@ impl DailyObjective {
             return Ok(());
         }
         let conn = Connection::open(DB_FILE)?;
-        let mut stmt =
-            conn.prepare("INSERT INTO daily_objectives (day, year, text) VALUES (?1, ?2, ?3)")?;
+        let mut stmt = conn.prepare(
+            "INSERT OR REPLACE INTO daily_objectives (day, year, text) VALUES (?1, ?2, ?3)",
+        )?;
         stmt.execute(params![&self.day, &self.year, &self.text])?;
         self.persisted = true;
         Ok(())
@@ -271,17 +272,25 @@ impl DailyObjective {
         Self::new(text, date.unwrap_or(&DayWeekYear::default()))
     }
 
+    pub fn input_and_save() {
+        let mut goal = Self::input(None);
+        goal.present();
+        goal.save().expect("Error saving goal");
+    }
+
     fn present(&self) {
         println!("Your objetive today (#{}) is {}", self.day, self.text)
     }
 }
 
-struct Task {
+#[derive(Debug, Default)]
+pub struct Task {
     text: String,
     status: TaskStatus,
     persisted: bool,
 }
 
+#[derive(Debug)]
 enum TaskStatus {
     ToDo,
     Done,
@@ -289,6 +298,12 @@ enum TaskStatus {
     Discarded,
     // TODO: track progress
     // InProgress,
+}
+
+impl Default for TaskStatus {
+    fn default() -> Self {
+        Self::ToDo
+    }
 }
 
 impl Task {
@@ -356,11 +371,11 @@ impl Task {
     }
 
     fn input_new_tasks(today: &DayWeekYear, todo_tasks: &mut Vec<Self>) {
-        todo_tasks.push(Self::input(today));
+        todo_tasks.push(Self::default());
         todo!()
     }
 
-    fn input(today: &DayWeekYear) -> Self {
+    fn input(today: &DayWeekYear) {
         todo!()
     }
 
@@ -370,6 +385,10 @@ impl Task {
             status,
             persisted: false,
         }
+    }
+
+    pub fn list() -> Vec<Self> {
+        todo!()
     }
 }
 

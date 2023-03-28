@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 use clap::{Parser, Subcommand};
-use goals::WeeklyGoal;
+use goals::{wizard, DailyObjective, Task, WeeklyGoal};
 use human_panic::setup_panic;
 use rusqlite::Result;
 
@@ -35,9 +35,17 @@ fn main() {
     let cli = GoalsCli::parse();
 
     match &cli.command {
-        Some(GoalsCommands::Weekly) => WeeklyGoal::input(None),
-        Some(GoalsCommands::Daily) => WeeklyGoal::input(None), // TODO...
-        Some(GoalsCommands::ListTasks) => WeeklyGoal::input(None), // TODO...
-        None => WeeklyGoal::wizard(),
+        Some(GoalsCommands::Weekly) => {
+            WeeklyGoal::input_and_save();
+        }
+        Some(GoalsCommands::Daily) => {
+            DailyObjective::input_and_save();
+        }
+        Some(GoalsCommands::ListTasks) => {
+            Task::list();
+        }
+        None => {
+            wizard();
+        }
     };
 }
