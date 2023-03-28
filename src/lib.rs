@@ -2,7 +2,11 @@
 use chrono::{Datelike, Local};
 use colored::Colorize;
 use rusqlite::{params, Connection, Result};
-use std::{fmt, io, thread::current};
+use std::{
+    fmt,
+    io::{self, Write},
+    thread::current,
+};
 
 const DB_FILE: &str = "goals.db";
 
@@ -124,7 +128,8 @@ impl WeeklyGoal {
     fn input(date: Option<&DayWeekYear>) -> Self {
         let mut goal_text = String::new();
 
-        println!("{}", "Weekly goal:".bold());
+        print!("{}", "Weekly goal: ".bold());
+        io::stdout().flush().expect("IO error");
         io::stdin()
             .read_line(&mut goal_text)
             .expect("Error reading console");
@@ -161,7 +166,12 @@ impl WeeklyGoal {
     }
 
     fn present(&self) {
-        println!("Your goal this week (#{}) is {}", self.week, self.text)
+        println!(
+            "Your {} this week (#{}) is: {}",
+            "Goal".blue().bold(),
+            self.week.to_string().bold(),
+            self.text.purple().bold()
+        )
     }
 }
 
@@ -262,7 +272,8 @@ impl DailyObjective {
     fn input(date: Option<&DayWeekYear>) -> Self {
         let mut text = String::new();
 
-        println!("{}", "Today's objective:".bold());
+        print!("{}", "Today's objective: ".bold());
+        io::stdout().flush().expect("IO error");
         io::stdin()
             .read_line(&mut text)
             .expect("Error reading console");
@@ -279,7 +290,12 @@ impl DailyObjective {
     }
 
     fn present(&self) {
-        println!("Your objetive today (#{}) is {}", self.day, self.text)
+        println!(
+            "Your {} today (#{}) is: {}",
+            "Objetive".blue().bold(),
+            self.day.to_string().bold(),
+            self.text.red().bold()
+        )
     }
 }
 
