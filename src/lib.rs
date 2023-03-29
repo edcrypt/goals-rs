@@ -286,6 +286,7 @@ impl DailyObjective {
         let mut prompt = Text::new("Today's objective:")
             .with_help_message("What to you want to do to get closer to this week's goal?");
 
+        // TODO: simplify this
         let text = if let Some(current) = current {
             current.text
         } else {
