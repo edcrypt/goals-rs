@@ -313,7 +313,7 @@ impl DailyObjective {
 
         let current = Self::get_current(&today).expect("Error getting current objective");
 
-        let mut objective = Self::input(None, current);
+        let mut objective = Self::input(Some(&today), current);
         objective.present();
 
         // TODO: skip resaving if the objective is default
