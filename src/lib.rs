@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 use chrono::{Datelike, Local};
 use colored::Colorize;
+use inquire::{Confirm, Text};
 use rusqlite::{params, Connection, Result};
 use std::{
     fmt,
@@ -126,13 +127,10 @@ impl WeeklyGoal {
     }
 
     fn input(date: Option<&DayWeekYear>) -> Self {
-        let mut goal_text = String::new();
-
-        print!("{}", "Weekly goal: ".bold());
-        io::stdout().flush().expect("IO error");
-        io::stdin()
-            .read_line(&mut goal_text)
-            .expect("Error reading console");
+        let mut goal_text = Text::new("What is your goal for this week?")
+            .with_help_message("What do you want to achieve?")
+            .prompt()
+            .expect("Error reading goal");
 
         goal_text = goal_text.trim().to_string();
 
@@ -142,7 +140,16 @@ impl WeeklyGoal {
     pub fn input_and_save() {
         let mut goal = Self::input(None);
         goal.present();
-        goal.save().expect("Error saving goal");
+        let confirmation = Confirm::new("Is this correct?")
+            .with_default(false)
+            .with_help_message("Confirm to store your goal for this week")
+            .prompt();
+
+        match confirmation {
+            Ok(true) => goal.save().expect("Error saving goal"),
+            Ok(false) => println!("Cancelled"),
+            Err(_) => println!("Error reading answer, try again later"),
+        }
     }
 
     fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
@@ -213,23 +220,29 @@ impl DailyObjective {
         }
     }
 
-    fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
+    fn get_current(today: &DayWeekYear) -> Result<Option<Self>> {
         let conn = Connection::open(DB_FILE)?;
-
         Self::create_table(&conn)?;
 
         let mut stmt =
             conn.prepare("SELECT text FROM daily_objectives WHERE day =?1 AND year =?2")?;
         let mut rows = stmt.query(params![&today.day, &today.year])?;
         let row = rows.next()?;
-        if let Some(row) = row {
-            Ok(Self::from_db(
+        Ok(row.map(|row| {
+            Self::from_db(
                 row.get(0).unwrap_or(String::from("")),
                 today.day,
                 today.year,
-            ))
+            )
+        }))
+    }
+
+    fn get_current_or_input(today: &DayWeekYear) -> Result<Self> {
+        let current = Self::get_current(today)?;
+        if let Some(current) = current {
+            Ok(current)
         } else {
-            Ok(Self::input(Some(today)))
+            Ok(Self::input(Some(today), None))
         }
     }
 
@@ -269,24 +282,51 @@ impl DailyObjective {
         Ok(())
     }
 
-    fn input(date: Option<&DayWeekYear>) -> Self {
-        let mut text = String::new();
+    fn input(date: Option<&DayWeekYear>, current: Option<Self>) -> Self {
+        let mut prompt = Text::new("Today's objective:")
+            .with_help_message("What to you want to do to get closer to this week's goal?");
 
-        print!("{}", "Today's objective: ".bold());
-        io::stdout().flush().expect("IO error");
-        io::stdin()
-            .read_line(&mut text)
-            .expect("Error reading console");
+        let text = if let Some(current) = current {
+            current.text
+        } else {
+            String::new()
+        };
 
-        text = text.trim().to_string();
+        if !text.is_empty() {
+            prompt = prompt.with_default(&text)
+        };
 
-        Self::new(text, date.unwrap_or(&DayWeekYear::default()))
+        let mut answer = prompt.prompt().expect("Error reading objective");
+
+        answer = answer.trim().to_string();
+
+        Self::new(answer, date.unwrap_or(&DayWeekYear::default()))
     }
 
     pub fn input_and_save() {
-        let mut goal = Self::input(None);
-        goal.present();
-        goal.save().expect("Error saving goal");
+        let today = DayWeekYear::new();
+
+        // The daily objective should be related to the weekly goal
+        WeeklyGoal::get_current_or_input(&today)
+            .expect("Error getting weekly goal")
+            .present();
+
+        let current = Self::get_current(&today).expect("Error getting current objective");
+
+        let mut objective = Self::input(None, current);
+        objective.present();
+
+        // TODO: skip resaving if the objective is default
+        let confirmation = Confirm::new("Is this correct?")
+            .with_default(false)
+            .with_help_message("Confirm to store today's objective")
+            .prompt();
+
+        match confirmation {
+            Ok(true) => objective.save().expect("Error saving objective"),
+            Ok(false) => println!("Cancelled"),
+            Err(_) => println!("Error reading answer, try again later"),
+        }
     }
 
     fn present(&self) {
